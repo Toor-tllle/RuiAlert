@@ -65,6 +65,7 @@ private var warnings: List<String> = emptyList()
 
 @Volatile
 private var warningsLoaded = false
+private var cityWarnings: List<String>? = null
 
 @Volatile
 private var locSnapshot: LocationStore.Loc? = null
@@ -136,6 +137,16 @@ Notify.notifyWeather(this@MainActivity, "大雨特別警報", "名古屋市に�
 demoRow2.addView(demoButton("線状降水帯デモ") {
 Notify.notifyWeather(this@MainActivity, "顕著な大雨に関する情報", "愛知県で線状降水帯による大雨が発生しています（デモ通知です）", false)
 }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+val demoRow3 = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL}
+demoRow3.addView(demoButton("津波注意報デモ") {
+Notify.notifyTsunami(this@MainActivity, "Advisory", "愛知県外海（デモ）")
+}, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+demoRow3.addView(demoButton("津波警報デモ") {
+Notify.notifyTsunami(this@MainActivity, "Warning", "愛知県外海（デモ）")
+}, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+demoRow3.addView(demoButton("大津波警報デモ") {
+Notify.notifyTsunami(this@MainActivity, "MajorWarning", "愛知県外海（デモ）")
+}, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
 boardText = TextView(this).apply {
 text = "読み込み中…"
 textSize = 15f
@@ -146,6 +157,7 @@ setLineSpacing(6f, 1.15f)
 homeContent.addView(demoLabel)
 homeContent.addView(demoRow1)
 homeContent.addView(demoRow2)
+homeContent.addView(demoRow3)
 val dndLabel = TextView(this).apply {
 text = "重要通知（津波・EEW警報など）"
 textSize = 12f
@@ -602,6 +614,18 @@ WarningSource.fetch(loc.prefCode)
 null
 }
 warnings = wi?.allNames ?: emptyList()
+val city = loc.cityName
+cityWarnings = if (wi != null && city != null) {
+val names = AreaMaster.class20Names(this@MainActivity)
+val prefix = loc.prefCode.substring(0, 2)
+val myCode = names.entries.firstOrNull { it.key.startsWith(prefix) && it.value == city }?.key
+?: names.entries.firstOrNull {
+it.key.startsWith(prefix) && (it.value.contains(city) || city.contains(it.value))
+}?.key
+if (myCode != null) wi.byArea[myCode] ?: emptyList() else null
+} else {
+null
+}
 warningsLoaded = true
 renderAll()
 sleep(300_000)
@@ -668,6 +692,16 @@ sb.append("今日：").append(weatherIcon(w.todayText)).append(" ").append(w.tod
 sb.append("明日：").append(weatherIcon(w.tomorrowText)).append(" ").append(w.tomorrowText).append('\n')
 }
 sb.append("\n■ 注意報・警報（").append(locSnapshot?.prefName ?: "愛知県").append("）\n")
+val cw = cityWarnings
+val cn = locSnapshot?.cityName
+if (cw != null && cn != null) {
+sb.append("\uD83D\uDCCD").append(cn).append("：")
+if (cw.isEmpty()) {
+sb.append("発表中の注意報・警報はありません\n")
+} else {
+sb.append(cw.joinToString("、")).append('\n')
+}
+}
 when {
 !warningsLoaded -> sb.append("取得中…\n")
 warnings.isEmpty() -> sb.append("発表中の注意報・警報はありません\n")

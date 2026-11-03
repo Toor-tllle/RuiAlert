@@ -13,23 +13,43 @@ import java.net.URL
 
 /** Self-update via GitHub: version.json on the repo, APK from GitHub Releases. */
 object Updater {
-    private const val VERSION_URL =
+    // The GitHub API serves the file (nearly) uncached; raw.githubusercontent.com
+    // can lag a few minutes behind after version.json changes.
+    private const val VERSION_API_URL =
+        "https://api.github.com/repos/Toor-tllle/RuiAlert/contents/version.json"
+    private const val VERSION_RAW_URL =
         "https://raw.githubusercontent.com/Toor-tllle/RuiAlert/main/version.json"
 
     data class Info(val versionCode: Int, val versionName: String, val apkUrl: String)
 
     fun fetchLatest(): Info? {
-        return try {
-            val json = Http.get("$VERSION_URL?t=${System.currentTimeMillis()}")
-            val o = JSONObject(json)
-            Info(
-                versionCode = o.getInt("versionCode"),
-                versionName = o.optString("versionName"),
-                apkUrl = o.getString("apkUrl")
-            )
+        return fetchFromApi() ?: try {
+            parse(Http.get("$VERSION_RAW_URL?t=${System.currentTimeMillis()}"))
         } catch (e: Exception) {
             null
         }
+    }
+
+    private fun fetchFromApi(): Info? {
+        return try {
+            val conn = URL(VERSION_API_URL).openConnection() as HttpURLConnection
+            conn.connectTimeout = 12000
+            conn.readTimeout = 12000
+            conn.setRequestProperty("Accept", "application/vnd.github.raw+json")
+            conn.setRequestProperty("User-Agent", "RuiAlert-Updater")
+            parse(conn.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() })
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    private fun parse(json: String): Info {
+        val o = JSONObject(json)
+        return Info(
+            versionCode = o.getInt("versionCode"),
+            versionName = o.optString("versionName"),
+            apkUrl = o.getString("apkUrl")
+        )
     }
 
     fun currentVersionCode(context: Context): Long {

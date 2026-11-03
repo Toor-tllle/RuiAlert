@@ -137,7 +137,8 @@ data class WarningInfo(
     val headline: String,
     val specials: List<String>,
     val allNames: List<String>,
-    val reportDatetime: String
+    val reportDatetime: String,
+    val byArea: Map<String, List<String>> = emptyMap()
 )
 
 /** Active warnings for a prefecture, from the JMA bosai warning JSON. */
@@ -161,22 +162,36 @@ object WarningSource {
             val url = "https://www.jma.go.jp/bosai/warning/data/warning/$prefCode.json"
             val root = org.json.JSONObject(Http.get(url))
             val codes = mutableSetOf<String>()
+            val byArea = mutableMapOf<String, List<String>>()
             val areaTypes = root.getJSONArray("areaTypes")
             for (i in 0 until areaTypes.length()) {
                 val areas = areaTypes.getJSONObject(i).getJSONArray("areas")
                 for (j in 0 until areas.length()) {
-                    val ws = areas.getJSONObject(j).optJSONArray("warnings") ?: continue
-                    for (k in 0 until ws.length()) {
-                        val w = ws.getJSONObject(k)
-                        if (w.optString("status") != "解除") codes.add(w.optString("code"))
+                    val areaObj = areas.getJSONObject(j)
+                    val areaCode = areaObj.optString("code")
+                    val areaNames = mutableListOf<String>()
+                    val ws = areaObj.optJSONArray("warnings")
+                    if (ws != null) {
+                        for (k in 0 until ws.length()) {
+                            val w = ws.getJSONObject(k)
+                            if (w.optString("status") != "解除") {
+                                val code = w.optString("code")
+                                if (code.isNotEmpty()) {
+                                    codes.add(code)
+                                    NAMES[code]?.let { areaNames.add(it) }
+                                }
+                            }
+                        }
                     }
+                    if (areaCode.length == 7) byArea[areaCode] = areaNames.distinct()
                 }
             }
             WarningInfo(
                 headline = root.optString("headlineText"),
                 specials = codes.mapNotNull { SPECIAL[it] },
                 allNames = codes.mapNotNull { NAMES[it] }.distinct(),
-                reportDatetime = root.optString("reportDatetime")
+                reportDatetime = root.optString("reportDatetime"),
+                byArea = byArea
             )
         } catch (e: Exception) {
             null
@@ -436,5 +451,76 @@ object ViewerConfig {
             e.putString(KEY, url.trim())
         }
         e.apply()
+    }
+}
+
+
+/** JMA area master: municipality code -> name, for showing warnings of the user's own city. */
+object AreaMaster {
+    private const val AREA_URL = "https://www.jma.go.jp/bosai/common/const/area.json"
+    private const val CACHE_FILE = "jma_area_class20.json"
+    private const val TTL_MS = 7L * 24 * 60 * 60 * 1000
+
+    @Volatile
+    private var cached: Map<String, String>? = null
+
+    fun class20Names(context: android.content.Context): Map<String, String> {
+        cached?.let { return it }
+        synchronized(this) {
+            cached?.let { return it }
+            readDisk(context)?.let {
+                cached = it
+                return it
+            }
+            val fetched = try {
+                parse(Http.get(AREA_URL))
+            } catch (e: Exception) {
+                emptyMap()
+            }
+            if (fetched.isNotEmpty()) {
+                writeDisk(context, fetched)
+                cached = fetched
+            }
+            return fetched
+        }
+    }
+
+    private fun parse(json: String): Map<String, String> {
+        val root = org.json.JSONObject(json)
+        val c20 = root.getJSONObject("class20s")
+        val out = HashMap<String, String>()
+        val keys = c20.keys()
+        while (keys.hasNext()) {
+            val code = keys.next()
+            out[code] = c20.getJSONObject(code).optString("name")
+        }
+        return out
+    }
+
+    private fun readDisk(context: android.content.Context): Map<String, String>? {
+        return try {
+            val f = java.io.File(context.filesDir, CACHE_FILE)
+            if (!f.exists() || System.currentTimeMillis() - f.lastModified() > TTL_MS) return null
+            val o = org.json.JSONObject(f.readText(Charsets.UTF_8))
+            val out = HashMap<String, String>()
+            val keys = o.keys()
+            while (keys.hasNext()) {
+                val k = keys.next()
+                out[k] = o.getString(k)
+            }
+            if (out.isEmpty()) null else out
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    private fun writeDisk(context: android.content.Context, map: Map<String, String>) {
+        try {
+            val o = org.json.JSONObject()
+            for ((k, v) in map) o.put(k, v)
+            java.io.File(context.filesDir, CACHE_FILE).writeText(o.toString(), Charsets.UTF_8)
+        } catch (e: Exception) {
+            // cache is best effort
+        }
     }
 }
