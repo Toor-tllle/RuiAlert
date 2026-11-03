@@ -208,7 +208,7 @@ class MonitorService : Service() {
                 .append("を観測しました。")
         }
         spoken.append(tsunamiSpeech(d.tsunami))
-        Speaker.speak(this, spoken.toString())
+        Speaker.speak(this, spoken.toString(), critical = false)
         NotifiedLog.add(this, "地震情報（確定震度）", spoken.toString())
     }
 

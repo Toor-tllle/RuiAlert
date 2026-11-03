@@ -166,7 +166,7 @@ object Notify {
         } else {
             "緊急地震速報、予報です。震源は${hypocenter}、マグニチュード${magnitude}。${areaLabel}で震度${shindo}程度の揺れが予想されます。"
         }
-        Speaker.speak(context, spoken, if (isWarn) 2600 else 2800)
+        Speaker.speak(context, spoken, if (isWarn) 2600 else 2800, critical = isWarn)
     }
 
     fun notifyWeather(context: Context, title: String, text: String, purple: Boolean) {

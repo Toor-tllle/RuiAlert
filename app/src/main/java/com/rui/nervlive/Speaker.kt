@@ -47,6 +47,7 @@ object Speaker {
                         val r = tts?.setLanguage(Locale.JAPANESE)
                         ready = r != TextToSpeech.LANG_MISSING_DATA &&
                             r != TextToSpeech.LANG_NOT_SUPPORTED
+                        // Attributes are set per utterance in speak(); alarm is the default.
                         tts?.setAudioAttributes(
                             AudioAttributes.Builder()
                                 .setUsage(AudioAttributes.USAGE_ALARM)
@@ -63,14 +64,28 @@ object Speaker {
 
     /**
      * Speaks [text] after [delayMs] of silence, so a notification chime can finish first.
+     * Critical readouts (EEW warning, tsunami) use the alarm stream and can break
+     * through silent mode; non-critical ones (EEW forecast, confirmed shindo) use
+     * the notification stream and respect the ringer mode.
      * No-op when speech is disabled or no Japanese TTS voice is available.
      */
-    fun speak(context: Context, text: String, delayMs: Long = 0) {
+    fun speak(context: Context, text: String, delayMs: Long = 0, critical: Boolean = true) {
         if (!isEnabled(context)) return
         ensureInit(context)
         val engine = tts ?: return
         if (!ready) return
         try {
+            val usage = if (critical) {
+                AudioAttributes.USAGE_ALARM
+            } else {
+                AudioAttributes.USAGE_NOTIFICATION
+            }
+            engine.setAudioAttributes(
+                AudioAttributes.Builder()
+                    .setUsage(usage)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                    .build()
+            )
             if (delayMs > 0) {
                 engine.playSilentUtterance(delayMs, TextToSpeech.QUEUE_ADD, "rui_pause")
             }
