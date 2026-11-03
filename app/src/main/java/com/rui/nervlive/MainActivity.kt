@@ -66,6 +66,7 @@ private var warnings: List<String> = emptyList()
 @Volatile
 private var warningsLoaded = false
 private var cityWarnings: List<String>? = null
+private var hasCrashDump = false
 
 @Volatile
 private var locSnapshot: LocationStore.Loc? = null
@@ -75,22 +76,9 @@ super.onCreate(savedInstanceState)
 Diag.crumb(this, "activity.onCreate.begin")
 CrashLog.install(this)
 
-// If a previous run crashed or hung, show the recorded dump first.
-val dump = CrashLog.read(this)
-if (dump!= null) {
-Diag.crumb(this, "activity.showingDump")
-CrashLog.clear(this)
-val log = Diag.readLog(this)?: ""
-val textView = TextView(this).apply {
-text = "\n$dump\n\n\n$log"
-textSize = 10f
-setTextIsSelectable(true)
-setPadding(32, 32, 32, 32)
-}
-setContentView(ScrollView(this).apply { addView(textView)})
-Diag.firstFrame = true
-return
-}
+// A crash record from a previous run never takes over the screen.
+// It is surfaced as a small notice on the Home page instead.
+hasCrashDump = CrashLog.read(this) != null
 
 Notify.ensureChannels(this)
 if (Build.VERSION.SDK_INT >= 33 &&
@@ -158,6 +146,35 @@ homeContent.addView(demoLabel)
 homeContent.addView(demoRow1)
 homeContent.addView(demoRow2)
 homeContent.addView(demoRow3)
+if (hasCrashDump) {
+val crashLabel = TextView(this).apply {
+text = "前回、エラーで終了した記録があります"
+textSize = 12f
+setTextColor(Color.rgb(255, 150, 150))
+setPadding(40, 16, 40, 4)
+}
+homeContent.addView(crashLabel)
+val crashRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL}
+crashRow.addView(demoButton("エラー記録を見る") {
+val dumpText = CrashLog.read(this@MainActivity)?: ""
+android.app.AlertDialog.Builder(this@MainActivity)
+.setTitle("前回のエラー記録")
+.setMessage(dumpText.take(3000))
+.setPositiveButton("閉じる", null)
+.setNeutralButton("記録を消す", android.content.DialogInterface.OnClickListener { _, _ ->
+CrashLog.clear(this@MainActivity)
+crashRow.visibility = android.view.View.GONE
+crashLabel.visibility = android.view.View.GONE
+})
+.show()
+}, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+crashRow.addView(demoButton("記録を消す") {
+CrashLog.clear(this@MainActivity)
+crashRow.visibility = android.view.View.GONE
+crashLabel.visibility = android.view.View.GONE
+}, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+homeContent.addView(crashRow)
+}
 val dndLabel = TextView(this).apply {
 text = "重要通知（津波・EEW警報など）"
 textSize = 12f
@@ -596,15 +613,20 @@ private fun startLoops() {
 // Quake detail + tsunami, every minute.
 Thread {
 while (!destroyed) {
+try {
 detail = QuakeDetailSource.fetch()
 tsunamiAreas = TsunamiSource.fetchAreas()
 renderAll()
+} catch (e: Exception) {
+// keep looping
+}
 sleep(60_000)
 }
 }.start()
 // Weather + warnings, every 5 minutes.
 Thread {
 while (!destroyed) {
+try {
 val loc = LocationStore.current(this@MainActivity)
 locSnapshot = loc
 weather = WeatherSource.fetch(loc.prefCode)
@@ -628,6 +650,9 @@ null
 }
 warningsLoaded = true
 renderAll()
+} catch (e: Exception) {
+// keep looping
+}
 sleep(300_000)
 }
 }.start()
@@ -652,13 +677,14 @@ else -> "🌡️"
 }
 
 private fun renderAll() {
-if (::locLabel.isInitialized) {
 val l = locSnapshot
-locLabel.text = if (l == null) {
+val locText = if (l == null) {
 "📍 現在地：取得中…"
 } else {
 "📍 現在地：${l.prefName}${l.cityName?.let { c -> "・$c" } ?: ""}（${if (l.fromGps) "GPS" else "位置情報オフのため愛知県"}）"
 }
+if (::locLabel.isInitialized) {
+runOnUiThread { if (!destroyed) locLabel.text = locText }
 }
 val time = SimpleDateFormat("HH:mm", Locale.JAPAN).format(Date())
 val d = detail
