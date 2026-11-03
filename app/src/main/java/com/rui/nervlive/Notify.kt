@@ -160,6 +160,13 @@ object Notify {
         val nm = context.getSystemService(NotificationManager::class.java)
         nm.notify(2000 + (nextId++ % 100), builder.build())
         NotifiedLog.add(context, title, text)
+        // Voice readout, starting after the channel chime has finished.
+        val spoken = if (isWarn) {
+            "緊急地震速報、警報です。震源は${hypocenter}、マグニチュード${magnitude}。${areaLabel}で震度${shindo}程度の強い揺れが予想されます。"
+        } else {
+            "緊急地震速報、予報です。震源は${hypocenter}、マグニチュード${magnitude}。${areaLabel}で震度${shindo}程度の揺れが予想されます。"
+        }
+        Speaker.speak(context, spoken, if (isWarn) 2600 else 2800)
     }
 
     fun notifyWeather(context: Context, title: String, text: String, purple: Boolean) {
@@ -217,6 +224,13 @@ object Notify {
         val nm = context.getSystemService(NotificationManager::class.java)
         nm.notify(4000 + (nextId++ % 100), builder.build())
         NotifiedLog.add(context, title, text)
+        // Voice readout, starting after the alert chime has finished.
+        val advice = if (grade == "Advisory") {
+            "海岸には近づかないでください。"
+        } else {
+            "直ちに高台や避難ビルなど、安全な場所へ避難してください。"
+        }
+        Speaker.speak(context, "${title}が発表されました。${areasText}です。${advice}", 2600)
     }
 }
 

@@ -81,6 +81,7 @@ CrashLog.install(this)
 hasCrashDump = CrashLog.read(this) != null
 
 Notify.ensureChannels(this)
+Speaker.warmUp(this)
 if (Build.VERSION.SDK_INT >= 33 &&
 checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)!= PackageManager.PERMISSION_GRANTED
 ) {
@@ -209,6 +210,18 @@ setBackgroundColor(Color.rgb(30, 36, 48))
 setOnClickListener { checkForUpdate(manual = true)}
 }
 homeContent.addView(updateBtn)
+val speechBtn = android.widget.Button(this).apply {
+text = if (Speaker.isEnabled(this@MainActivity)) "音声読み上げ：ON" else "音声読み上げ：OFF"
+textSize = 12f
+setTextColor(Color.WHITE)
+setBackgroundColor(Color.rgb(30, 36, 48))
+setOnClickListener {
+val next = !Speaker.isEnabled(this@MainActivity)
+Speaker.setEnabled(this@MainActivity, next)
+text = if (next) "音声読み上げ：ON" else "音声読み上げ：OFF"
+}
+}
+homeContent.addView(speechBtn)
 homeContent.addView(ScrollView(this).apply { addView(boardText)})
 pageHome = homeContent
 

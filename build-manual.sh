@@ -59,7 +59,7 @@ EXTRAPKGS=${EXTRAPKGS#:}
 echo "extra packages: $EXTRAPKGS"
 
 # 3) Processed manifest (aapt2 needs package + version + uses-sdk in the manifest)
-sed -e 's|<manifest xmlns:android="http://schemas.android.com/apk/res/android">|<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="com.rui.nervlive" android:versionCode="19" android:versionName="1.0.4">|' \
+sed -e 's|<manifest xmlns:android="http://schemas.android.com/apk/res/android">|<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="com.rui.nervlive" android:versionCode="20" android:versionName="1.1.0">|' \
     -e 's|<application|<uses-sdk android:minSdkVersion="29" android:targetSdkVersion="36" /><application|' \
     $PROJ/app/src/main/AndroidManifest.xml > $B/AndroidManifest.xml
 

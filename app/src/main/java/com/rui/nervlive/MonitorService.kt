@@ -33,6 +33,9 @@ class MonitorService : Service() {
     private var eewBaselineDone = false
     private var lastEventId: String? = null
     private var notifiedLevel = 0 // 0 none, 1 forecast, 2 warning
+    private var lastQuakeKey: String? = null
+    private var lastQuakeSpokenMy = 0
+    private var lastQuakeSpokenMax = 0
 
     // Tsunami state
     private var tsunamiBaselineDone = false
@@ -73,6 +76,7 @@ class MonitorService : Service() {
             scope.launch { eewLoop() }
             scope.launch { weatherLoop() }
             scope.launch { tsunamiLoop() }
+            scope.launch { quakeInfoLoop() }
         }
         return START_STICKY
     }
@@ -83,6 +87,7 @@ class MonitorService : Service() {
     }
 
     private suspend fun eewLoop() {
+        Speaker.warmUp(this)
         while (scope.isActive) {
             try {
                 checkEew()
@@ -147,6 +152,78 @@ class MonitorService : Service() {
             secondsToArrival = arrivalSec
         )
         notifiedLevel = level
+    }
+
+    private suspend fun quakeInfoLoop() {
+        while (scope.isActive) {
+            try {
+                checkQuakeInfo()
+            } catch (e: Exception) {
+                // keep monitoring
+            }
+            delay(30_000)
+        }
+    }
+
+    /**
+     * Reads out a confirmed quake when the user's prefecture observed shindo 3+,
+     * or the nationwide maximum reached 3+. Names the places that observed the
+     * maximum shindo and whether there is a tsunami.
+     */
+    private fun checkQuakeInfo() {
+        val d = QuakeDetailSource.fetch() ?: return
+        val key = d.timeText + "|" + d.hypocenter
+        val loc = LocationStore.current(this)
+        val myScale = d.prefScales[loc.prefName] ?: 0
+        if (lastQuakeKey == null) {
+            // Baseline: never read out a quake that predates this run.
+            lastQuakeKey = key
+            lastQuakeSpokenMy = myScale
+            lastQuakeSpokenMax = d.maxScale
+            return
+        }
+        if (key != lastQuakeKey) {
+            lastQuakeKey = key
+            lastQuakeSpokenMy = 0
+            lastQuakeSpokenMax = 0
+        }
+        val myTrigger = myScale >= 30 && myScale > lastQuakeSpokenMy
+        val maxTrigger = d.maxScale >= 30 && d.maxScale > lastQuakeSpokenMax
+        if (!myTrigger && !maxTrigger) return
+        if (myScale > lastQuakeSpokenMy) lastQuakeSpokenMy = myScale
+        if (d.maxScale > lastQuakeSpokenMax) lastQuakeSpokenMax = d.maxScale
+        val places = if (d.maxScalePlaces.isNotEmpty()) {
+            d.maxScalePlaces.joinToString("、")
+        } else {
+            d.prefScales.filter { it.value == d.maxScale }.keys.joinToString("、")
+        }
+        val magText = if (d.magnitude % 1.0 == 0.0) d.magnitude.toInt().toString() else d.magnitude.toString()
+        val spoken = StringBuilder()
+        spoken.append("地震がありました。震源は").append(d.hypocenter)
+            .append("、マグニチュード").append(magText).append("。")
+        spoken.append("最大震度").append(scaleText(d.maxScale)).append("を、")
+            .append(places).append("で観測しました。")
+        if (myScale >= 30 && myScale != d.maxScale) {
+            spoken.append(loc.prefName).append("では震度").append(scaleText(myScale))
+                .append("を観測しました。")
+        }
+        spoken.append(tsunamiSpeech(d.tsunami))
+        Speaker.speak(this, spoken.toString())
+        NotifiedLog.add(this, "地震情報（確定震度）", spoken.toString())
+    }
+
+    private fun tsunamiSpeech(tsunami: String): String = when (tsunami) {
+        "津波の心配なし" -> "津波の心配はありません。"
+        "津波の有無は調査中", "津波の有無を調査中" -> "津波の有無は調査中です。"
+        "津波の影響はなし（若干の海面変動）" -> "津波の影響はありませんが、若干の海面変動があるかもしれません。"
+        "津波情報なし" -> ""
+        else -> tsunami + "。"
+    }
+
+    private fun scaleText(scale: Int): String = when (scale) {
+        10 -> "1"; 20 -> "2"; 30 -> "3"; 40 -> "4"; 45 -> "5弱"
+        50 -> "5強"; 55 -> "6弱"; 60 -> "6強"; 70 -> "7"
+        else -> scale.toString()
     }
 
     private fun shindoRank(s: String): Int = when (s) {

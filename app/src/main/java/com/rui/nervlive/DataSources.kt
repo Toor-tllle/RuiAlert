@@ -327,7 +327,8 @@ data class QuakeDetail(
     val tsunami: String,
     val latitude: Double,
     val longitude: Double,
-    val prefScales: Map<String, Int>
+    val prefScales: Map<String, Int>,
+    val maxScalePlaces: List<String> = emptyList()
 )
 
 object QuakeDetailSource {
@@ -339,12 +340,17 @@ object QuakeDetailSource {
             val eq = o.getJSONObject("earthquake")
             val hypo = eq.getJSONObject("hypocenter")
             val scales = mutableMapOf<String, Int>()
+            val maxPlaces = mutableListOf<String>()
             val points = o.optJSONArray("points")
             if (points != null) {
                 for (i in 0 until points.length()) {
                     val p = points.getJSONObject(i)
                     val pref = p.optString("pref")
                     val scale = p.optInt("scale", 0)
+                    val addr = p.optString("addr")
+                    if (scale == eq.optInt("maxScale", 0) && addr.isNotEmpty() && !maxPlaces.contains(addr)) {
+                        maxPlaces.add(addr)
+                    }
                     if (pref.isNotEmpty()) {
                         val cur = scales[pref] ?: 0
                         if (scale > cur) scales[pref] = scale
@@ -368,7 +374,8 @@ object QuakeDetailSource {
                 },
                 latitude = hypo.optDouble("latitude", 0.0),
                 longitude = hypo.optDouble("longitude", 0.0),
-                prefScales = scales
+                prefScales = scales,
+                maxScalePlaces = maxPlaces.take(3)
             )
         } catch (e: Exception) {
             null
